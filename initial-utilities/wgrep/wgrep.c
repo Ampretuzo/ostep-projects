@@ -33,17 +33,28 @@ char *mystrstr(const char *haystack, const char *needle) {
 void print_matches(FILE *input, char *searchterm) {
     char *line = NULL;
     size_t len = 0;
-    ssize_t len_read;
+    bool read_successful = true;
 
-    // TODO: Handle getline errors after while
-    while ((len_read = getline(&line, &len, input)) != -1) {
+    while (getline(&line, &len, input) != -1) {
         if (mystrstr(line, searchterm)) {
             printf(line);
         }
     }
+    if (ferror(input)) {
+        /*
+         * NOTE: How to test this?
+         * One way would be to call wgrep in a way that instead of file
+         * stdin would be acquired.  But what to feed to it to cause some
+         * errors?
+         */
+        perror("print_matches");
+    }
 
-    // TODO: See how to detect memory/descriptor leaks with valgrind
     free(line);
+    if (!read_successful) {
+        fclose(input);
+        exit(1);
+    }
 }
 
 
