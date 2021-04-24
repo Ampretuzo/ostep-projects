@@ -2,23 +2,10 @@
 #include <stdbool.h>
 
 
-/*
- * Cannot argv be null terminated?
- * See: https://retrocomputing.stackexchange.com/a/5180
- */
-int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        fprintf(stderr, "wzip: file1 [file2 ...]");
-        return 1;
-    }
+bool debug = false;
 
-    char *filename;
-    FILE* file;
 
-    filename = argv[1];
-    file = fopen(filename, "r");  // TODO: Handle file problems
-
-    bool debug = false;
+bool compress(FILE *file, FILE *out) {
     char prev_char;
     char curr_char;
     /*
@@ -51,13 +38,13 @@ int main(int argc, char *argv[]) {
             if (debug) {
                 printf("%d%c", char_count, prev_char);
             } else {
-                fwrite(&char_count, sizeof(char_count), 1, stdout);
-                if (ferror(stdout)) {
+                fwrite(&char_count, sizeof(char_count), 1, out);
+                if (ferror(out)) {
                     perror("fwrite");
                     return 1;
                 }
-                fwrite(&prev_char, 1, 1, stdout);
-                if (ferror(stdout)) {
+                fwrite(&prev_char, 1, 1, out);
+                if (ferror(out)) {
                     perror("fwrite");
                     return 1;
                 }
@@ -69,9 +56,35 @@ int main(int argc, char *argv[]) {
         char_count++;
     }
 
-    // TODO: Handle file problems.
-    // ...but, do we really care?  Our job is over at this point anyways
-    fclose(file);  
+    return true;
+}
 
-    return 0;
+
+/*
+ * Cannot argv be null terminated?
+ * See: https://retrocomputing.stackexchange.com/a/5180
+ */
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        fprintf(stderr, "wzip: file1 [file2 ...]");
+        return 1;
+    }
+
+    int ret_val = 0;
+    char *filename;
+    FILE* file;
+
+    for (int i = 1; i < argc; i++) {
+        filename = argv[i];
+        file = fopen(filename, "r");  // TODO: Handle file problems
+
+        if (!compress(file, stdout)) {
+            ret_val = 1;
+            break;
+        }
+
+        fclose(file);  // TODO: Handle file problems
+    }
+
+    return ret_val;
 }
