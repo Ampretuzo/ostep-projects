@@ -11,7 +11,7 @@ bool debug = false;
  */
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        fprintf(stderr, "wzip: file1 [file2 ...]");
+        fprintf(stderr, "wzip: file1 [file2 ...]\n");
         return 1;
     }
 
