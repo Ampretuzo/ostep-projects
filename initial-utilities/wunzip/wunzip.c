@@ -6,6 +6,11 @@
 
 
 int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        fprintf(stderr, "wunzip: file1 [file2 ...]\n");
+        return 1;
+    }
+
     char *filename;
     FILE *file;
     /*
@@ -18,39 +23,48 @@ int main(int argc, char *argv[]) {
     int character_count;
     char character;
 
-    filename = argv[1];
-    if (!(file = fopen(filename, "r"))) {
-        perror(filename);
-        return 1;
-    }
+    for (int fi = 1; fi < argc; fi++) {
+        filename = argv[fi];
+        if (!(file = fopen(filename, "r"))) {
+            perror(filename);
+            return 1;
+        }
 
-    while (fread(&buffer, sizeof(int) + 1, 1, file) == 1) {
-        character = buffer[sizeof(int)];
-        // NOTE: How to make this endianness-portable?
-        character_count = (int) buffer[0];
-        if (DEV_PRINT) {
-            printf(
-                "Character '%c' repeated %d times.\n",
-                character,
-                character_count
-            );
-        } else {
+        while (fread(&buffer, sizeof(int) + 1, 1, file) == 1) {
+            character = buffer[sizeof(int)];
             /*
-             * NOTE: Would it make sense to do buffering or just malloc a large
-             * chunk before printf?  Does syscall for each char suck?
+             * NOTE: How to make this endianness-portable?  I guess we'd need
+             * to use program-specific int formatting in wzip.c
              */
-            for (int i = 0; i < character_count; i++) {
-                printf("%c", character);
+            character_count = *(int *)buffer;
+            if (DEV_PRINT) {
+                printf(
+                    "Character '%c' repeated %d times.\n",
+                    character,
+                    character_count
+                );
+            } else {
+                /*
+                 * NOTE: Would it make sense to do buffering or just
+                 * malloc a large chunk before printf?
+                 * Does syscall for each char suck?
+                 */
+                for (int i = 0; i < character_count; i++) {
+                    printf("%c", character);
+                }
             }
         }
-    }
 
-    if (ferror(file)) {
-        perror("fread");
-        return 1;
-    }
+        if (ferror(file)) {
+            perror(filename);
+            return 1;
+        }
 
-    fclose(file);  // TODO: Handle
+        if (fclose(file)) {
+            perror(filename);
+            return 1;
+        }
+    }
 
     return 0;
 }
