@@ -28,7 +28,10 @@ int main(int argc, char *argv[]) {
 
     for (int i = 1; i < argc; i++) {
         filename = argv[i];
-        file = fopen(filename, "r");  // TODO: Handle file problems
+        if (!(file = fopen(filename, "r"))) {
+            perror(filename);
+            return 1;
+        }
         eof = false;
 
         while(!eof) {
@@ -74,7 +77,10 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        fclose(file);  // TODO: Handle file problems
+        if (fclose(file)) {
+            perror(filename);
+            return 1;
+        }
     }
 
     return 0;
