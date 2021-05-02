@@ -30,7 +30,7 @@ char *mystrstr(const char *haystack, const char *needle) {
 }
 
 
-void print_matches(FILE *input, char *searchterm) {
+void wgrep(FILE *input, char *searchterm) {
     char *line = NULL;
     size_t len = 0;
     bool read_successful = true;
@@ -47,7 +47,8 @@ void print_matches(FILE *input, char *searchterm) {
          * stdin would be acquired.  But what to feed to it to cause some
          * errors?
          */
-        perror("print_matches");
+	read_successful = false;
+        perror("wgrep");
     }
 
     free(line);
@@ -88,7 +89,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        print_matches(file, searchterm);
+        wgrep(file, searchterm);
 
         fclose(file);
     }

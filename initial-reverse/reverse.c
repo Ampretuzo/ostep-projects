@@ -38,8 +38,19 @@ void reverse_seekable(FILE *in, FILE *out, FILE *err) {
 	}
 }
 
+
 void reverse(FILE *in, FILE *out, FILE *err) {
-	fprintf(err, "TODO");
+	char *lines[10];
+	unsigned int num_lines = 0;
+	size_t line_len = 0;
+
+	while (getline(&lines[num_lines], &line_len, in) != -1) {
+		num_lines ++;
+	}
+
+	for (int i = 0; i < num_lines; i++) {
+		fprintf(out, lines[num_lines - i - 1]);
+	}
 }
 
 
