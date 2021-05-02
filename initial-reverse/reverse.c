@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <sys/stat.h>
@@ -40,11 +41,28 @@ void reverse_seekable(FILE *in, FILE *out, FILE *err) {
 
 
 void reverse(FILE *in, FILE *out, FILE *err) {
-	char *lines[10];
-	unsigned int num_lines = 0;
-	size_t line_len = 0;
+	char **lines = NULL;
+	size_t lines_size = 0;
+	size_t num_lines = 0;
 
-	while (getline(&lines[num_lines], &line_len, in) != -1) {
+	while (true) {
+		char *new_line = NULL;
+		size_t line_len = 0;
+		if (getline(&new_line, &line_len, in) < 0) {
+			break;
+		}
+
+		if (num_lines + 1 > lines_size) {
+			lines_size = lines_size == 0 ? 1 : lines_size * 2;
+			void *new_lines;
+			if ((new_lines = realloc(lines, lines_size * sizeof(char *))) ) {
+				lines = new_lines;
+			} else {
+				// TODO: Handle
+			}
+		}
+
+		lines[num_lines] = new_line;
 		num_lines ++;
 	}
 
