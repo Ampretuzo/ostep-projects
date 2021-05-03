@@ -40,25 +40,37 @@ void reverse_seekable(FILE *in, FILE *out, FILE *err) {
 }
 
 
-void reverse(FILE *in, FILE *out, FILE *err) {
+int reverse(FILE *in, FILE *out, FILE *err) {
 	char **lines = NULL;
 	size_t lines_size = 0;
 	size_t num_lines = 0;
+	char *new_line;
+	size_t line_len;
+	int ret_val = 0;
 
 	while (true) {
-		char *new_line = NULL;
-		size_t line_len = 0;
+		new_line = NULL;
+		line_len = 0;
 		if (getline(&new_line, &line_len, in) < 0) {
+			if (ferror(in)) {
+				perror("getline in reverse");
+				free(new_line);
+				ret_val = 1;
+			}
 			break;
 		}
 
 		if (num_lines + 1 > lines_size) {
 			lines_size = lines_size == 0 ? 1 : lines_size * 2;
 			void *new_lines;
-			if ((new_lines = realloc(lines, lines_size * sizeof(char *))) ) {
+			if ((
+				new_lines = realloc(lines, lines_size * sizeof(char *) )
+			)) {
 				lines = new_lines;
 			} else {
-				// TODO: Handle
+				fprintf(err, "realloc failed in reverse.  Possibly out-of-memory\n");
+				ret_val = 1;
+				break;
 			}
 		}
 
@@ -67,8 +79,13 @@ void reverse(FILE *in, FILE *out, FILE *err) {
 	}
 
 	for (int i = 0; i < num_lines; i++) {
-		fprintf(out, lines[num_lines - i - 1]);
+		int line_idx = num_lines - i - 1;
+
+		fprintf(out, lines[line_idx]);  // NOTE: fprintf errors?
+		free(lines[line_idx]);
 	}
+
+	return ret_val;
 }
 
 
@@ -81,8 +98,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	if (argc == 1) {
-		reverse(stdin, stdout, stderr);
-		return 0;
+		return reverse(stdin, stdout, stderr);
 	}
 
 	char *input_filename;
