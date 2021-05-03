@@ -7,12 +7,21 @@
 #define fsame(stat1, stat2) (stat1.st_dev == stat2.st_dev && stat1.st_ino == stat2.st_ino)
 
 
-void reverse_seekable(FILE *in, FILE *out, FILE *err) {
+int reverse_seekable(FILE *in, FILE *out, FILE *err) {
 	char *line = NULL;
 	size_t line_len = 0;
 	fpos_t fpos_start;
 
-	fseek(in, 0, SEEK_END);
+	if(fseek(in, 0, SEEK_END) < 0) {
+		perror("fseek to the end of file in reverse_seekable");
+		return 1;
+	}
+
+	/* NOTE: From this point on I'm just assuming
+	 * that syscalls won't error out.
+	 * Otherwise it gets too verbose.
+	 * That's why exceptions are so great btw...
+	 */
 
 	while (true) {
 		fgetpos(in, &fpos_start);
@@ -22,7 +31,7 @@ void reverse_seekable(FILE *in, FILE *out, FILE *err) {
 
 		fseek(in, -1, SEEK_CUR);
 		if (ftell(in) <= 0) {
-			return;
+			return 0;
 		}
 		bool last_char = true;
 		while (true) {
@@ -89,8 +98,6 @@ int reverse(FILE *in, FILE *out, FILE *err) {
 }
 
 
-/* TODO: Error handling where applicable (+ file closing and memory freeing)
- */
 int main(int argc, char *argv[]) {
 	if (argc > 3) {
 		fprintf(stderr, "usage: reverse [input] [output]\n");
@@ -112,8 +119,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	if (argc == 2) {
-		reverse_seekable(input_file, stdout, stderr);
-		return 0;
+		return reverse_seekable(input_file, stdout, stderr);
 	}
 
 	if (argc == 3) {
@@ -139,8 +145,7 @@ int main(int argc, char *argv[]) {
 			fprintf(stderr, "reverse: cannot open file '%s'\n", output_filename);
 			return 1;
 		}
-		reverse_seekable(input_file, out, stderr);
-		return 0;
+		return reverse_seekable(input_file, out, stderr);
 	}
 
 }
