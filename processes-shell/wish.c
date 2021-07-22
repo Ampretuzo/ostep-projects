@@ -80,7 +80,7 @@ struct tokens tokenize(char *line) {
 	size_t tokens_len = 0;
 	char *token;
 
-	while ((token = strsep(&line, " \n")) != NULL) {
+	while ((token = strsep(&line, " \t\n")) != NULL) {
 		if (*token == '\0') {
 			continue;
 		}
