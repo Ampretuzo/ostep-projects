@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
+#define NELEMS(x) (sizeof x / sizeof x[0])
+
 struct tokens {
 	char **list;
 	size_t len;
@@ -26,7 +28,7 @@ char *BUILTIN_CD = "cd";
 char *BUILTIN_PATH = "path";
 
 // Why not char*?  See: https://stackoverflow.com/a/164258
-char *DEFAULT_PATH[2] = {"/bin", "/usr/bin"};
+char *DEFAULT_PATH[1] = {"/bin"};
 struct paths paths;  // Global obj for convenience
 
 
@@ -199,7 +201,7 @@ int main(int argc, char *argv[]) {
 	struct command command;
 	
 	paths_init(&paths);
-	paths_update(&paths, DEFAULT_PATH, 2);
+	paths_update(&paths, DEFAULT_PATH, NELEMS(DEFAULT_PATH));
 
 	while (true) {
 		fprintf(stdout, "wish> ");
