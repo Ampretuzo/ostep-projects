@@ -5,7 +5,9 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
+#define DEBUG false
 #define NELEMS(x) (sizeof x / sizeof x[0])
+#define PRINTDEBUG(...) if (DEBUG) { fprintf(stderr, __VA_ARGS__); }
 
 struct tokens {
 	char **list;
@@ -67,12 +69,12 @@ void paths_update(struct paths *paths, char **tokens, int tokens_len) {
 	paths_free(paths);
 	paths->len = tokens_len;
 	paths->list = malloc(sizeof(char*) * paths->len);
-	fprintf(stderr, "New `paths->list` (%ld):", paths->len);
+	PRINTDEBUG("New `paths->list` (%ld dir(s)):", paths->len);
 	for (int i = 0; i < tokens_len; i++) {
 		paths->list[i] = strdup(tokens[i]);
-		fprintf(stderr, " \"%s\"", paths->list[i]);
+		PRINTDEBUG(" \"%s\"", paths->list[i]);
 	}
-	fprintf(stderr, "\n");
+	PRINTDEBUG("\n");
 }
 
 struct tokens tokenize(char *line) {
@@ -112,7 +114,7 @@ void handle(struct command *command) {
 	if (!strcmp(cmd, BUILTIN_EXIT)) {
 		if (command->tokens.len > 1) {
 			fprintf(stderr, "\"exit\" expects no arguments\n");
-			exit(1);
+			return;
 		}
 		exit(0);
 	}
@@ -148,7 +150,7 @@ void handle(struct command *command) {
 
 	for (int i = 0; i < paths.len; i++) {
 		candidate_exec_path = path_concat(paths.list[i], cmd);
-		// fprintf(stderr, "Testing %s exec access\n", candidate_exec_path);
+		PRINTDEBUG("Testing %s exec access\n", candidate_exec_path);
 
 		if (access(candidate_exec_path, F_OK)) {
 			continue;
@@ -192,10 +194,7 @@ void handle(struct command *command) {
 	} while (!WIFEXITED(cmd_wstatus) && !WIFSIGNALED(cmd_wstatus));
 }
 
-/* TODO: Error handlings, cleanup and resource closing etc...  Final check with valgrind
- * TODO: Sigint handler.  (So that the shell won't quit on C-c.)
- */
-int main(int argc, char *argv[]) {
+void shell(FILE *input, bool interactive) {
 	char *line = NULL;
 	size_t line_len = 0;
 	struct command command;
@@ -204,21 +203,50 @@ int main(int argc, char *argv[]) {
 	paths_update(&paths, DEFAULT_PATH, NELEMS(DEFAULT_PATH));
 
 	while (true) {
-		fprintf(stdout, "wish> ");
+		if (interactive) {
+			fprintf(stdout, "wish> ");
+		}
 
-		if (getline(&line, &line_len, stdin) < 0) {
-			if (feof(stdin)) {
-				return 0;
+		if (getline(&line, &line_len, input) < 0) {
+			if (feof(input)) {
+				return;
 			}
 			perror("Couln't read command line (getline)");
-			return 1;
+			return;
 		}
 
 		command_init(&command, line);
 		handle(&command);
 
 	}
+}
 
-	return 0;
+void shell_interactive() {
+	shell(stdin, true);
+}
+
+void shell_script(char *file_path) {
+	FILE *script;
+	if ((script = fopen(file_path, "r")) == NULL) {
+		perror(file_path);
+		exit(1);
+	};
+	shell(script, false);
+}
+
+/* TODO: Error handlings, cleanup and resource closing etc...  Final check with valgrind
+ * TODO: Sigint handler.  (So that the shell won't quit on C-c.)
+ */
+int main(int argc, char *argv[]) {
+	if (argc == 1) {
+		shell_interactive();
+	} else if (argc == 2) {
+		shell_script(argv[1]);
+	} else {
+		fprintf(stderr, "Usage: wish [script]\n");
+		exit(1);
+	}
+
+	exit(0);
 }
 
