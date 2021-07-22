@@ -15,6 +15,11 @@ struct command {
 	struct tokens tokens;
 };
 
+struct paths {
+	char **list;
+	size_t len;
+};
+
 char *BUILTIN_EXIT = "exit";
 char *BUILTIN_PWD = "pwd";
 char *BUILTIN_CD = "cd";
@@ -22,7 +27,7 @@ char *BUILTIN_PATH = "path";
 
 // Why not char*?  See: https://stackoverflow.com/a/164258
 char *DEFAULT_PATH[2] = {"/bin", "/usr/bin"};
-char **path;  // Null-terminated, for fun
+struct paths paths;  // Global obj for convenience
 
 
 char *path_concat(char *base, char *tail) {
@@ -43,14 +48,27 @@ char *path_concat(char *base, char *tail) {
 	return path;
 }
 
-void change_path(char **tokens, int tokens_len) {
-	// Mutates global `path`
-	path = malloc(sizeof(char*) * tokens_len + 1);
-	path[tokens_len - 1] = NULL;
-	fprintf(stderr, "Changing path:");
+void paths_init(struct paths *paths) {
+	paths->len = 0;
+	paths->list = malloc(0);
+}
+
+void paths_free(struct paths *paths) {
+	for (int i = 0; i < paths->len; i++) {
+		free(paths->list[i]);
+	}
+	free(paths->list);
+	paths->len = 0;
+}
+
+void paths_update(struct paths *paths, char **tokens, int tokens_len) {
+	paths_free(paths);
+	paths->len = tokens_len;
+	paths->list = malloc(sizeof(char*) * paths->len);
+	fprintf(stderr, "New `paths->list` (%ld):", paths->len);
 	for (int i = 0; i < tokens_len; i++) {
-		path[i] = strdup(tokens[i]);
-		fprintf(stderr, " \"%s\"", path[i]);
+		paths->list[i] = strdup(tokens[i]);
+		fprintf(stderr, " \"%s\"", paths->list[i]);
 	}
 	fprintf(stderr, "\n");
 }
@@ -117,57 +135,71 @@ void handle(struct command *command) {
 	}
 
 	if (!strcmp(cmd, BUILTIN_PATH)) {
-		change_path(&command->tokens.list[1], command->tokens.len - 1);
+		paths_update(&paths, &command->tokens.list[1], command->tokens.len - 1);
+		return;
 	}
 
-	// TODO: binary command
+	// TODO: WIP: binary command
+	
+	char *candidate_exec_path;
+	char *exec_path = NULL;
 
-	for (int i = 0; i < 1; i++) {
-		char *exec_path = path_concat(path[i], cmd);
-		if (access(exec_path, X_OK) < 0) {
-			perror("X_OK nono");
+	for (int i = 0; i < paths.len; i++) {
+		candidate_exec_path = path_concat(paths.list[i], cmd);
+		// fprintf(stderr, "Testing %s exec access\n", candidate_exec_path);
+
+		if (access(candidate_exec_path, F_OK)) {
 			continue;
 		}
 
-		int cmd_pid;
-		int cmd_wstatus;
-		if (!(cmd_pid = fork())) {
-			char **args = malloc((command->tokens.len + 1) * sizeof(char*));
-			memcpy(
-				args,
-				command->tokens.list,
-				command->tokens.len * sizeof(char*)
-			);
-			args[command->tokens.len] = (char*) NULL;
-			execv(exec_path, args);
-			perror("TODO: execv");
-			exit(1);
+		if (!access(candidate_exec_path, X_OK)) {
+			exec_path = candidate_exec_path;
 		}
-
-		if (cmd_pid < 0) {
-			perror("TODO: fork");
-			exit(1);
-		}
-
-		do {
-			wait(&cmd_wstatus);
-		} while (!WIFEXITED(cmd_wstatus) && !WIFSIGNALED(cmd_wstatus));
 		break;
 	}
-}
 
-/*
-*/
+	if (!exec_path) {
+		fprintf(stderr, "%s: ", candidate_exec_path);
+		perror("");
+		return;
+	}
+
+	int cmd_pid;
+	int cmd_wstatus;
+
+	if (!(cmd_pid = fork())) {
+		char **args = malloc((command->tokens.len + 1) * sizeof(char*));
+		memcpy(
+			args,
+			command->tokens.list,
+			command->tokens.len * sizeof(char*)
+		);
+		args[command->tokens.len] = (char*) NULL;
+		execv(exec_path, args);
+		perror("TODO: execv");
+		exit(1);
+	}
+
+	if (cmd_pid < 0) {
+		perror("TODO: fork");
+		exit(1);
+	}
+
+	do {
+		wait(&cmd_wstatus);
+	} while (!WIFEXITED(cmd_wstatus) && !WIFSIGNALED(cmd_wstatus));
+}
 
 /* TODO: Error handlings, cleanup and resource closing etc...  Final check with valgrind
  * TODO: Sigint handler.  (So that the shell won't quit on C-c.)
  */
 int main(int argc, char *argv[]) {
 	char *line = NULL;
-	struct command command;
 	size_t line_len = 0;
+	struct command command;
 	
-	change_path(DEFAULT_PATH, 2);
+	paths_init(&paths);
+	paths_update(&paths, DEFAULT_PATH, 2);
 
 	while (true) {
 		fprintf(stdout, "wish> ");
