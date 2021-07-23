@@ -8,7 +8,7 @@
 #define DEBUG false
 #define NELEMS(x) (sizeof x / sizeof x[0])
 #define PRINTDEBUG(...) if (DEBUG) { fprintf(stderr, __VA_ARGS__); }
-#define GENERIC_ERROR_MESSAGE "An error has occured\n"
+#define GENERIC_ERROR_MESSAGE "An error has occurred\n"
 
 struct tokens {
 	char **list;
@@ -95,21 +95,9 @@ struct tokens tokenize(char *line) {
 		tokens = realloc(tokens, tokens_len * sizeof(char*));
 		tokens[tokens_len - 1] = strdup(token);
 	}
+	PRINTDEBUG("Found %ld tokens\n", tokens_len);
 
 	return (struct tokens){tokens, tokens_len};
-}
-
-void trim(char **str) {
-	// NOTE: Modifies pointer!
-	char *c = *(str) - 1;
-	while (*(++c) == ' ' || *c == '\t') {
-		(*str)++;
-	}
-	while (*(++c) != '\0') {  // Finding string end
-	}
-	while(*(--c) == '\n' || *c == ' ' || *c == '\t') {
-		*c = '\0';
-	}
 }
 
 void command_init(struct command *command, char *line) {
@@ -124,21 +112,23 @@ void command_free(struct command *command) {
 	free(command->redir_path);
 }
 
-void command_parse(struct command *command) {
+bool command_parse(struct command *command) {
 	char *line = strdup(command->line);
 
-	char *after_redir = line;
-	strsep(&after_redir, ">");
-	if (after_redir) {
-		trim(&after_redir);
-		command->redir_path = strdup(after_redir);
-		PRINTDEBUG("Input includes redir to \"%s\"\n", command->redir_path);
-	} else {
-		command->redir_path = NULL;
+	char *redir_part = line;
+	strsep(&redir_part, ">");
+	if (redir_part) {
+		struct tokens redir_tokens = tokenize(redir_part);
+		if (redir_tokens.len != 1) {
+			return true;
+		}
+		command->redir_path = redir_tokens.list[0];
 	}
 	command->tokens = tokenize(line);
 
 	free(line);
+
+	return false;
 }
 
 void handle(struct command *command) {
@@ -291,8 +281,11 @@ void shell(FILE *input, bool interactive) {
 		}
 
 		command_init(&command, line);
-		command_parse(&command);
-		handle(&command);
+		if (!command_parse(&command)) {
+			handle(&command);
+		} else {
+			fprintf(stderr, GENERIC_ERROR_MESSAGE);
+		}
 		command_free(&command);
 
 	}

@@ -1,1 +1,3 @@
 Input to check bad redirection. Contains no command before '>'.
+EDIT: No command is a valid command actually.  Should create an empty file.  (Or truncate an existing file.)
+
