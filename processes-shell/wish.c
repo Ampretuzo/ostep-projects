@@ -8,6 +8,7 @@
 #define DEBUG false
 #define NELEMS(x) (sizeof x / sizeof x[0])
 #define PRINTDEBUG(...) if (DEBUG) { fprintf(stderr, __VA_ARGS__); }
+#define GENERIC_ERROR_MESSAGE "An error has occured\n"
 
 struct tokens {
 	char **list;
@@ -15,8 +16,9 @@ struct tokens {
 };
 
 struct command {
-	char *line;
-	struct tokens tokens;
+	char *line;  // echo Hello>  hello.text
+	struct tokens tokens;  // ["echo", "Hello"]
+	char *redir_path;  // "hello.txt"
 };
 
 struct paths {
@@ -78,6 +80,8 @@ void paths_update(struct paths *paths, char **tokens, int tokens_len) {
 }
 
 struct tokens tokenize(char *line) {
+	PRINTDEBUG("Tokenizing \"%s\"\n", line);
+
 	char **tokens = NULL;
 	size_t tokens_len = 0;
 	char *token;
@@ -89,18 +93,73 @@ struct tokens tokenize(char *line) {
 
 		tokens_len ++;
 		tokens = realloc(tokens, tokens_len * sizeof(char*));
-		tokens[tokens_len - 1] = token;
+		tokens[tokens_len - 1] = strdup(token);
 	}
 
 	return (struct tokens){tokens, tokens_len};
 }
 
+void trim(char **str) {
+	// NOTE: Modifies pointer!
+	char *c = *(str) - 1;
+	while (*(++c) == ' ' || *c == '\t') {
+		(*str)++;
+	}
+	while (*(++c) != '\0') {  // Finding string end
+	}
+	while(*(--c) == '\n' || *c == ' ' || *c == '\t') {
+		*c = '\0';
+	}
+}
+
 void command_init(struct command *command, char *line) {
 	command->line = strdup(line);
-	command->tokens = tokenize(command->line);
+	command->tokens.list = NULL;
+	command->tokens.len = 0;
+	command->redir_path = NULL;
+}
+
+void command_free(struct command *command) {
+	// TODO
+	free(command->redir_path);
+}
+
+void command_parse(struct command *command) {
+	char *line = strdup(command->line);
+
+	char *after_redir = line;
+	strsep(&after_redir, ">");
+	if (after_redir) {
+		trim(&after_redir);
+		command->redir_path = strdup(after_redir);
+		PRINTDEBUG("Input includes redir to \"%s\"\n", command->redir_path);
+	} else {
+		command->redir_path = NULL;
+	}
+	command->tokens = tokenize(line);
+
+	free(line);
 }
 
 void handle(struct command *command) {
+	if (command->tokens.len) {
+		PRINTDEBUG("Handling executable \"%s\"\n", command->tokens.list[0]);
+	} else {
+		PRINTDEBUG("\"%s\" has no executable\n", command->line);
+	}
+	PRINTDEBUG("Redirect output to \"%s\"\n", command->redir_path);
+
+	FILE *out;
+	if (command->redir_path) {
+		out = fopen(command->redir_path, "w");
+		if (!out) {
+			perror(command->redir_path);
+			return;
+		}
+	} else {
+		out = stdout;
+	}
+
 	// noop
 
 	if (!command->tokens.len) {
@@ -121,7 +180,8 @@ void handle(struct command *command) {
 
 	if (!strcmp(cmd, BUILTIN_PWD)) {
 		char *cwd = getcwd(NULL, 0);  // TODO: Error handling
-		printf("%s\n", cwd);
+		fprintf(out, "%s\n", cwd);
+		fflush(out);  fsync(fileno(out));
 		return;
 	}
 
@@ -163,8 +223,11 @@ void handle(struct command *command) {
 	}
 
 	if (!exec_path) {
-		fprintf(stderr, "%s: ", candidate_exec_path);
-		perror("");
+		if (paths.len) {
+			perror(candidate_exec_path);
+		} else {
+			fprintf(stderr, "Path is empty: executable was not found\n");
+		}
 		return;
 	}
 
@@ -172,6 +235,14 @@ void handle(struct command *command) {
 	int cmd_wstatus;
 
 	if (!(cmd_pid = fork())) {
+		if (command->redir_path) {
+			PRINTDEBUG("Closing stdout and duping %s to it\n", command->redir_path);
+			close(STDOUT_FILENO);
+			if (dup(fileno(out)) < 0) {
+				fprintf(stderr, GENERIC_ERROR_MESSAGE);
+				exit(1);
+			}
+		}
 		char **args = malloc((command->tokens.len + 1) * sizeof(char*));
 		memcpy(
 			args,
@@ -192,6 +263,10 @@ void handle(struct command *command) {
 	do {
 		wait(&cmd_wstatus);
 	} while (!WIFEXITED(cmd_wstatus) && !WIFSIGNALED(cmd_wstatus));
+
+	if (command->redir_path) {
+		fclose(out);
+	}
 }
 
 void shell(FILE *input, bool interactive) {
@@ -216,7 +291,9 @@ void shell(FILE *input, bool interactive) {
 		}
 
 		command_init(&command, line);
+		command_parse(&command);
 		handle(&command);
+		command_free(&command);
 
 	}
 }
