@@ -60,7 +60,7 @@ char *path_concat(char *base, char *tail) {
 
 void paths_init(struct paths *paths) {
 	paths->len = 0;
-	paths->list = malloc(0);
+	paths->list = NULL;
 }
 
 void paths_free(struct paths *paths) {
@@ -145,7 +145,8 @@ bool command_parse(struct command *command) {
 		if (redir_tokens.len != 1) {
 			return true;
 		}
-		command->redir_path = redir_tokens.list[0];
+		command->redir_path = strdup(redir_tokens.list[0]);
+		tokens_free(&redir_tokens);
 	}
 	command->tokens = tokenize_as_words(line);
 
@@ -189,9 +190,14 @@ void command_execute_builtin(struct command *command, bool parallel) {
 	}
 
 	if (!strcmp(cmd, BUILTIN_PWD)) {
-		char *cwd = getcwd(NULL, 0);  // TODO: Error handling
+		char *cwd;
+		if ((cwd = getcwd(NULL, 0)) == NULL) {
+			perror("getcwd");
+			return;
+		}
 		fprintf(out, "%s\n", cwd);
 		fflush(out);  fsync(fileno(out));
+		free(cwd);
 		return;
 	}
 
@@ -228,6 +234,42 @@ void command_execute_builtin(struct command *command, bool parallel) {
 	command->builtin_status = -1;
 }
 
+/**
+ * Finds first file path that exists and returns it if it's an executable.
+ */
+char *find_exec_path(struct paths paths, char *cmd) {
+	char *candidate_path;
+	char *found_path = NULL;
+
+	for (int i = 0; i < paths.len && !found_path; i++) {
+		candidate_path = path_concat(paths.list[i], cmd);
+
+		PRINTDEBUG("find_exec_path: Checking %s file\n", candidate_path);
+
+		if (!access(candidate_path, F_OK)) {
+			found_path = strdup(candidate_path);
+		} else if (i == paths.len - 1) {
+			perror(candidate_path);
+		}
+
+		free(candidate_path);
+	}
+
+	if (!found_path) {
+		return NULL;
+	}
+
+	if (!access(found_path, X_OK)) {
+		return found_path;
+	}
+
+	perror(found_path);
+
+	free(found_path);
+
+	return NULL;
+}
+
 void command_execute(struct command *command) {
 	if (command->tokens.len) {
 		PRINTDEBUG(
@@ -238,6 +280,11 @@ void command_execute(struct command *command) {
 		PRINTDEBUG("command_execute: \"%s\" has no executable\n", command->line);
 	}
 	PRINTDEBUG("command_execute: Redirect output to \"%s\"\n", command->redir_path);
+
+	if (!paths.len) {
+		fprintf(stderr, "Path is empty: executable was not found\n");
+		return;
+	}
 
 	FILE *out;
 	if (command->redir_path) {
@@ -250,29 +297,9 @@ void command_execute(struct command *command) {
 		out = stdout;
 	}
 
-	char *candidate_exec_path;
-	char *exec_path = NULL;
-
-	for (int i = 0; i < paths.len; i++) {
-		candidate_exec_path = path_concat(paths.list[i], command->tokens.list[0]);
-		PRINTDEBUG("command_execute: Testing %s exec access\n", candidate_exec_path);
-
-		if (access(candidate_exec_path, F_OK)) {
-			continue;
-		}
-
-		if (!access(candidate_exec_path, X_OK)) {
-			exec_path = candidate_exec_path;
-		}
-		break;
-	}
+	char *exec_path = find_exec_path(paths, command->tokens.list[0]);
 
 	if (!exec_path) {
-		if (paths.len) {
-			perror(candidate_exec_path);
-		} else {
-			fprintf(stderr, "Path is empty: executable was not found\n");
-		}
 		return;
 	}
 
@@ -297,9 +324,10 @@ void command_execute(struct command *command) {
 		);
 		args[command->tokens.len] = (char*) NULL;
 		execv(exec_path, args);
-		perror("TODO: execv");
+		perror("command_execute: execv");
 		exit(1);
 	}
+	free(exec_path);
 
 	command->fork_pid = cmd_pid;
 
