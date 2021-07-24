@@ -21,6 +21,7 @@ struct command {
 	char *line;			// echo Hello>  hello.text
 	struct tokens tokens;		// ["echo", "Hello"]
 	char *redir_path;		// "hello.txt"
+	int builtin_status;		// Exit status for builtins.  (< 0 if not yet run.)
 	int fork_pid;			// Process pid if not a builtin
 };
 
@@ -140,9 +141,86 @@ bool command_parse(struct command *command) {
 	return false;
 }
 
+void command_execute_builtin(struct command *command, bool parallel) {
+	PRINTDEBUG("command_execute_builtin: Called with parallel=%d\n", parallel);
+
+	FILE *out;
+	if (command->redir_path) {
+		out = fopen(command->redir_path, "w");
+		if (!out) {
+			perror(command->redir_path);
+			return;
+		}
+	} else {
+		out = stdout;
+	}
+
+	command->builtin_status = 0;
+
+	if (!command->tokens.len) {
+		return;
+	}
+
+	char *cmd = command->tokens.list[0];
+	
+	if (!strcmp(cmd, BUILTIN_EXIT)) {
+		if (parallel) {
+			return;
+		}
+		if (command->tokens.len > 1) {
+			fprintf(stderr, "\"exit\" expects no arguments\n");
+			command->builtin_status = 1;
+			return;
+		}
+		exit(0);
+	}
+
+	if (!strcmp(cmd, BUILTIN_PWD)) {
+		char *cwd = getcwd(NULL, 0);  // TODO: Error handling
+		fprintf(out, "%s\n", cwd);
+		fflush(out);  fsync(fileno(out));
+		return;
+	}
+
+	if (!strcmp(cmd, BUILTIN_CD)) {
+		if (parallel) {
+			return;
+		}
+		if (command->tokens.len != 2) {
+			command->builtin_status = 1;
+			fprintf(stderr, "\"%s\" expects exactly one argument\n", BUILTIN_CD);
+		} else {
+			if (chdir(command->tokens.list[1]) < 0) {
+				command->builtin_status = 1;
+				// Just mimicking bash
+				fprintf(stderr, "cd: %s: ", command->tokens.list[1]);
+				perror("");
+			}
+		}
+		return;
+	}
+
+	if (!strcmp(cmd, BUILTIN_PATH)) {
+		if (parallel) {
+			return;
+		}
+		paths_update(&paths, &command->tokens.list[1], command->tokens.len - 1);
+		return;
+	}
+
+	if (command->redir_path) {
+		fclose(out);
+	}
+
+	command->builtin_status = -1;
+}
+
 void command_execute(struct command *command) {
 	if (command->tokens.len) {
-		PRINTDEBUG("command_execute: Handling executable \"%s\"\n", command->tokens.list[0]);
+		PRINTDEBUG(
+			"command_execute: Handling executable \"%s\"\n",
+			command->tokens.list[0]
+		);
 	} else {
 		PRINTDEBUG("command_execute: \"%s\" has no executable\n", command->line);
 	}
@@ -159,56 +237,11 @@ void command_execute(struct command *command) {
 		out = stdout;
 	}
 
-	// noop
-
-	if (!command->tokens.len) {
-		return;
-	}
-
-	// Builtin
-	
-	char *cmd = command->tokens.list[0];
-	
-	if (!strcmp(cmd, BUILTIN_EXIT)) {
-		if (command->tokens.len > 1) {
-			fprintf(stderr, "\"exit\" expects no arguments\n");
-			return;
-		}
-		exit(0);
-	}
-
-	if (!strcmp(cmd, BUILTIN_PWD)) {
-		char *cwd = getcwd(NULL, 0);  // TODO: Error handling
-		fprintf(out, "%s\n", cwd);
-		fflush(out);  fsync(fileno(out));
-		return;
-	}
-
-	if (!strcmp(cmd, BUILTIN_CD)) {
-		if (command->tokens.len != 2) {
-			fprintf(stderr, "\"%s\" expects exactly one argument\n", BUILTIN_CD);
-		} else {
-			if (chdir(command->tokens.list[1]) < 0) {
-				// Just mimicking bash
-				fprintf(stderr, "cd: %s: ", command->tokens.list[1]);
-				perror("");
-			}
-		}
-		return;
-	}
-
-	if (!strcmp(cmd, BUILTIN_PATH)) {
-		paths_update(&paths, &command->tokens.list[1], command->tokens.len - 1);
-		return;
-	}
-
-	// Executable
-	
 	char *candidate_exec_path;
 	char *exec_path = NULL;
 
 	for (int i = 0; i < paths.len; i++) {
-		candidate_exec_path = path_concat(paths.list[i], cmd);
+		candidate_exec_path = path_concat(paths.list[i], command->tokens.list[0]);
 		PRINTDEBUG("command_execute: Testing %s exec access\n", candidate_exec_path);
 
 		if (access(candidate_exec_path, F_OK)) {
@@ -273,7 +306,11 @@ void command_execute(struct command *command) {
 bool parallel_command_lines(struct tokens *tokens, char *line) {
 	struct tokens ampersand_separated = tokenize_as_commands(line);
 	for (int i = 0; i < ampersand_separated.len; i++) {
-		if (!strcmp(ampersand_separated.list[i], "")) {
+		if (
+			!strcmp(ampersand_separated.list[i], "") &&
+			i != 0 &&
+			i != ampersand_separated.len - 1
+		) {
 			return true;
 		}
 	}
@@ -299,7 +336,10 @@ void handle(char *line) {
 			fprintf(stderr, GENERIC_ERROR_MESSAGE);
 			continue;
 		}
-		// TODO: Parallel execution of builtins
+		command_execute_builtin(&command, lines.len > 1);
+		if (command.builtin_status >= 0) {
+			continue;
+		}
 		command_execute(&command);
 	}
 
