@@ -5,7 +5,9 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
+#ifndef DEBUG
 #define DEBUG false
+#endif
 #define NELEMS(x) (sizeof x / sizeof x[0])
 #define PRINTDEBUG(...) if (DEBUG) { fprintf(stderr, __VA_ARGS__); }
 #define GENERIC_ERROR_MESSAGE "An error has occurred\n"
@@ -16,9 +18,10 @@ struct tokens {
 };
 
 struct command {
-	char *line;  // echo Hello>  hello.text
-	struct tokens tokens;  // ["echo", "Hello"]
-	char *redir_path;  // "hello.txt"
+	char *line;			// echo Hello>  hello.text
+	struct tokens tokens;		// ["echo", "Hello"]
+	char *redir_path;		// "hello.txt"
+	int fork_pid;			// Process pid if not a builtin
 };
 
 struct paths {
@@ -71,7 +74,7 @@ void paths_update(struct paths *paths, char **tokens, int tokens_len) {
 	paths_free(paths);
 	paths->len = tokens_len;
 	paths->list = malloc(sizeof(char*) * paths->len);
-	PRINTDEBUG("New `paths->list` (%ld dir(s)):", paths->len);
+	PRINTDEBUG("paths_update: New `paths->list` (%ld dir(s)):", paths->len);
 	for (int i = 0; i < tokens_len; i++) {
 		paths->list[i] = strdup(tokens[i]);
 		PRINTDEBUG(" \"%s\"", paths->list[i]);
@@ -79,15 +82,18 @@ void paths_update(struct paths *paths, char **tokens, int tokens_len) {
 	PRINTDEBUG("\n");
 }
 
-struct tokens tokenize(char *line) {
-	PRINTDEBUG("Tokenizing \"%s\"\n", line);
+/**
+ * skip_empty - Skips empty tokens, that is - repeated delimiters
+ */
+struct tokens tokenize(char *line, char *delim, bool skip_empty) {
+	PRINTDEBUG("tokenize: Tokenizing \"%s\" with \"%s\"\n", line, delim);
 
 	char **tokens = NULL;
 	size_t tokens_len = 0;
 	char *token;
 
-	while ((token = strsep(&line, " \t\n")) != NULL) {
-		if (*token == '\0') {
+	while ((token = strsep(&line, delim)) != NULL) {
+		if (skip_empty && *token == '\0') {
 			continue;
 		}
 
@@ -95,9 +101,17 @@ struct tokens tokenize(char *line) {
 		tokens = realloc(tokens, tokens_len * sizeof(char*));
 		tokens[tokens_len - 1] = strdup(token);
 	}
-	PRINTDEBUG("Found %ld tokens\n", tokens_len);
+	PRINTDEBUG("tokenize: Found %ld tokens\n", tokens_len);
 
 	return (struct tokens){tokens, tokens_len};
+}
+
+struct tokens tokenize_as_words(char *line) {
+	return tokenize(line, " \t\n", true);
+}
+
+struct tokens tokenize_as_commands(char *line) {
+	return tokenize(line, "&", false);
 }
 
 void command_init(struct command *command, char *line) {
@@ -107,37 +121,32 @@ void command_init(struct command *command, char *line) {
 	command->redir_path = NULL;
 }
 
-void command_free(struct command *command) {
-	// TODO
-	free(command->redir_path);
-}
-
 bool command_parse(struct command *command) {
 	char *line = strdup(command->line);
 
 	char *redir_part = line;
 	strsep(&redir_part, ">");
 	if (redir_part) {
-		struct tokens redir_tokens = tokenize(redir_part);
+		struct tokens redir_tokens = tokenize_as_words(redir_part);
 		if (redir_tokens.len != 1) {
 			return true;
 		}
 		command->redir_path = redir_tokens.list[0];
 	}
-	command->tokens = tokenize(line);
+	command->tokens = tokenize_as_words(line);
 
 	free(line);
 
 	return false;
 }
 
-void handle(struct command *command) {
+void command_execute(struct command *command) {
 	if (command->tokens.len) {
-		PRINTDEBUG("Handling executable \"%s\"\n", command->tokens.list[0]);
+		PRINTDEBUG("command_execute: Handling executable \"%s\"\n", command->tokens.list[0]);
 	} else {
-		PRINTDEBUG("\"%s\" has no executable\n", command->line);
+		PRINTDEBUG("command_execute: \"%s\" has no executable\n", command->line);
 	}
-	PRINTDEBUG("Redirect output to \"%s\"\n", command->redir_path);
+	PRINTDEBUG("command_execute: Redirect output to \"%s\"\n", command->redir_path);
 
 	FILE *out;
 	if (command->redir_path) {
@@ -156,7 +165,7 @@ void handle(struct command *command) {
 		return;
 	}
 
-	// builtins
+	// Builtin
 	
 	char *cmd = command->tokens.list[0];
 	
@@ -193,14 +202,14 @@ void handle(struct command *command) {
 		return;
 	}
 
-	// TODO: WIP: binary command
+	// Executable
 	
 	char *candidate_exec_path;
 	char *exec_path = NULL;
 
 	for (int i = 0; i < paths.len; i++) {
 		candidate_exec_path = path_concat(paths.list[i], cmd);
-		PRINTDEBUG("Testing %s exec access\n", candidate_exec_path);
+		PRINTDEBUG("command_execute: Testing %s exec access\n", candidate_exec_path);
 
 		if (access(candidate_exec_path, F_OK)) {
 			continue;
@@ -222,11 +231,12 @@ void handle(struct command *command) {
 	}
 
 	int cmd_pid;
-	int cmd_wstatus;
-
 	if (!(cmd_pid = fork())) {
 		if (command->redir_path) {
-			PRINTDEBUG("Closing stdout and duping %s to it\n", command->redir_path);
+			PRINTDEBUG(
+				"command_execute: Closing stdout and duping %s to it\n",
+				command->redir_path
+			);
 			close(STDOUT_FILENO);
 			if (dup(fileno(out)) < 0) {
 				fprintf(stderr, GENERIC_ERROR_MESSAGE);
@@ -245,24 +255,64 @@ void handle(struct command *command) {
 		exit(1);
 	}
 
-	if (cmd_pid < 0) {
-		perror("TODO: fork");
-		exit(1);
-	}
+	command->fork_pid = cmd_pid;
 
-	do {
-		wait(&cmd_wstatus);
-	} while (!WIFEXITED(cmd_wstatus) && !WIFSIGNALED(cmd_wstatus));
+	if (cmd_pid < 0) {
+		perror("Failed to fork a new process for command");
+	}
 
 	if (command->redir_path) {
 		fclose(out);
 	}
 }
 
+/* *******************************************************************
+ * Shell related code below
+ */
+
+bool parallel_command_lines(struct tokens *tokens, char *line) {
+	struct tokens ampersand_separated = tokenize_as_commands(line);
+	for (int i = 0; i < ampersand_separated.len; i++) {
+		if (!strcmp(ampersand_separated.list[i], "")) {
+			return true;
+		}
+	}
+	*tokens = ampersand_separated;
+	return false;
+}
+
+void handle(char *line) {
+	struct tokens lines;
+	struct command *commands;
+
+	if (parallel_command_lines(&lines, line)) {
+		fprintf(stderr, "Only single &'s might be used\n");
+		return;
+	}
+
+	commands = malloc(sizeof(struct command) * lines.len);
+
+	for (size_t i = 0; i < lines.len; i++) {
+		struct command command = commands[i];
+		command_init(&command, lines.list[i]);
+		if (command_parse(&command)) {
+			fprintf(stderr, GENERIC_ERROR_MESSAGE);
+			continue;
+		}
+		// TODO: Parallel execution of builtins
+		command_execute(&command);
+	}
+
+	for (size_t i = 0; i < lines.len; i++) {
+		int wstatus;
+		wait(&wstatus);
+		PRINTDEBUG("handle: A process exited with %d\n", WEXITSTATUS(wstatus));
+	}
+}
+
 void shell(FILE *input, bool interactive) {
 	char *line = NULL;
 	size_t line_len = 0;
-	struct command command;
 	
 	paths_init(&paths);
 	paths_update(&paths, DEFAULT_PATH, NELEMS(DEFAULT_PATH));
@@ -280,14 +330,7 @@ void shell(FILE *input, bool interactive) {
 			return;
 		}
 
-		command_init(&command, line);
-		if (!command_parse(&command)) {
-			handle(&command);
-		} else {
-			fprintf(stderr, GENERIC_ERROR_MESSAGE);
-		}
-		command_free(&command);
-
+		handle(line);
 	}
 }
 
@@ -305,7 +348,7 @@ void shell_script(char *file_path) {
 }
 
 /* TODO: Error handlings, cleanup and resource closing etc...  Final check with valgrind
- * TODO: Sigint handler.  (So that the shell won't quit on C-c.)
+ * TODO: Sigint command_executer.  (So that the shell won't quit on C-c.)
  */
 int main(int argc, char *argv[]) {
 	if (argc == 1) {
