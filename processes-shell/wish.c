@@ -68,7 +68,6 @@ void paths_free(struct paths *paths) {
 		free(paths->list[i]);
 	}
 	free(paths->list);
-	paths->len = 0;
 }
 
 void paths_update(struct paths *paths, char **tokens, int tokens_len) {
@@ -84,6 +83,7 @@ void paths_update(struct paths *paths, char **tokens, int tokens_len) {
 }
 
 /**
+ * line - Will be butchered
  * skip_empty - Skips empty tokens, that is - repeated delimiters
  */
 struct tokens tokenize(char *line, char *delim, bool skip_empty) {
@@ -107,6 +107,13 @@ struct tokens tokenize(char *line, char *delim, bool skip_empty) {
 	return (struct tokens){tokens, tokens_len};
 }
 
+void tokens_free(struct tokens *tokens) {
+	for (size_t i = 0; i < tokens->len; i++) {
+		free(tokens->list[i]);
+	}
+	free(tokens->list);
+}
+
 struct tokens tokenize_as_words(char *line) {
 	return tokenize(line, " \t\n", true);
 }
@@ -117,9 +124,15 @@ struct tokens tokenize_as_commands(char *line) {
 
 void command_init(struct command *command, char *line) {
 	command->line = strdup(line);
-	command->tokens.list = NULL;
+	command->tokens.list = NULL;  // NOTE: tokens_init...
 	command->tokens.len = 0;
 	command->redir_path = NULL;
+}
+
+void command_free(struct command *command) {
+	free(command->line);
+	tokens_free(&command->tokens);
+	free(command->redir_path);
 }
 
 bool command_parse(struct command *command) {
@@ -311,6 +324,7 @@ bool parallel_command_lines(struct tokens *tokens, char *line) {
 			i != 0 &&
 			i != ampersand_separated.len - 1
 		) {
+			tokens_free(&ampersand_separated);
 			return true;
 		}
 	}
@@ -331,23 +345,28 @@ void handle(char *line) {
 
 	for (size_t i = 0; i < lines.len; i++) {
 		struct command command = commands[i];
+
 		command_init(&command, lines.list[i]);
 		if (command_parse(&command)) {
 			fprintf(stderr, GENERIC_ERROR_MESSAGE);
-			continue;
+		} else {
+			command_execute_builtin(&command, lines.len > 1);
+			if (command.builtin_status < 0) {
+				command_execute(&command);
+			}
 		}
-		command_execute_builtin(&command, lines.len > 1);
-		if (command.builtin_status >= 0) {
-			continue;
-		}
-		command_execute(&command);
+		command_free(&command);
 	}
 
+	int wstatus;
+
 	for (size_t i = 0; i < lines.len; i++) {
-		int wstatus;
 		wait(&wstatus);
 		PRINTDEBUG("handle: A process exited with %d\n", WEXITSTATUS(wstatus));
 	}
+
+	free(commands);
+	tokens_free(&lines);
 }
 
 void shell(FILE *input, bool interactive) {
@@ -363,15 +382,17 @@ void shell(FILE *input, bool interactive) {
 		}
 
 		if (getline(&line, &line_len, input) < 0) {
-			if (feof(input)) {
-				return;
+			if (!feof(input)) {
+				perror("Couln't read command line (getline)");
 			}
-			perror("Couln't read command line (getline)");
+			free(line);
 			return;
 		}
 
 		handle(line);
 	}
+
+	paths_free(&paths);
 }
 
 void shell_interactive() {
@@ -384,7 +405,10 @@ void shell_script(char *file_path) {
 		perror(file_path);
 		exit(1);
 	};
+
 	shell(script, false);
+
+	fclose(script);
 }
 
 /* TODO: Error handlings, cleanup and resource closing etc...  Final check with valgrind
