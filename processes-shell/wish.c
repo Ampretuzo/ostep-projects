@@ -21,6 +21,7 @@ struct command {
 	char *line;			// echo Hello>  hello.text
 	struct tokens tokens;		// ["echo", "Hello"]
 	char *redir_path;		// "hello.txt"
+	FILE *out;			// stdout or some file if redirected
 	int builtin_status;		// Exit status for builtins.  (< 0 if not yet run.)
 	int fork_pid;			// Process pid if not a builtin
 };
@@ -127,11 +128,18 @@ void command_init(struct command *command, char *line) {
 	command->tokens.list = NULL;  // NOTE: tokens_init...
 	command->tokens.len = 0;
 	command->redir_path = NULL;
+	command->out = NULL;
 }
 
 void command_free(struct command *command) {
 	free(command->line);
 	tokens_free(&command->tokens);
+	// Could dup help us avoid this checking awkwardness?
+	if (command->redir_path && command->out) {
+		if (fclose(command->out)) {
+			perror("command_free");
+		}
+	}
 	free(command->redir_path);
 }
 
@@ -155,19 +163,20 @@ bool command_parse(struct command *command) {
 	return false;
 }
 
-void command_execute_builtin(struct command *command, bool parallel) {
-	PRINTDEBUG("command_execute_builtin: Called with parallel=%d\n", parallel);
-
-	FILE *out;
+bool command_init_io(struct command *command) {
 	if (command->redir_path) {
-		out = fopen(command->redir_path, "w");
-		if (!out) {
+		if ((command->out = fopen(command->redir_path, "w")) == NULL) {
 			perror(command->redir_path);
-			return;
+			return true;
 		}
 	} else {
-		out = stdout;
+		command->out = stdout;
 	}
+	return false;
+}
+
+void command_execute_builtin(struct command *command, bool parallel) {
+	PRINTDEBUG("command_execute_builtin: Called with parallel=%d\n", parallel);
 
 	command->builtin_status = 0;
 
@@ -195,8 +204,8 @@ void command_execute_builtin(struct command *command, bool parallel) {
 			perror("getcwd");
 			return;
 		}
-		fprintf(out, "%s\n", cwd);
-		fflush(out);  fsync(fileno(out));
+		fprintf(command->out, "%s\n", cwd);
+		fflush(command->out);  fsync(fileno(command->out));
 		free(cwd);
 		return;
 	}
@@ -225,10 +234,6 @@ void command_execute_builtin(struct command *command, bool parallel) {
 		}
 		paths_update(&paths, &command->tokens.list[1], command->tokens.len - 1);
 		return;
-	}
-
-	if (command->redir_path) {
-		fclose(out);
 	}
 
 	command->builtin_status = -1;
@@ -286,17 +291,6 @@ void command_execute(struct command *command) {
 		return;
 	}
 
-	FILE *out;
-	if (command->redir_path) {
-		out = fopen(command->redir_path, "w");
-		if (!out) {
-			perror(command->redir_path);
-			return;
-		}
-	} else {
-		out = stdout;
-	}
-
 	char *exec_path = find_exec_path(paths, command->tokens.list[0]);
 
 	if (!exec_path) {
@@ -311,7 +305,7 @@ void command_execute(struct command *command) {
 				command->redir_path
 			);
 			close(STDOUT_FILENO);
-			if (dup(fileno(out)) < 0) {
+			if (dup(fileno(command->out)) < 0) {
 				fprintf(stderr, GENERIC_ERROR_MESSAGE);
 				exit(1);
 			}
@@ -325,7 +319,7 @@ void command_execute(struct command *command) {
 		args[command->tokens.len] = (char*) NULL;
 		execv(exec_path, args);
 		perror("command_execute: execv");
-		exit(1);
+		exit(126);
 	}
 	free(exec_path);
 
@@ -333,10 +327,6 @@ void command_execute(struct command *command) {
 
 	if (cmd_pid < 0) {
 		perror("Failed to fork a new process for command");
-	}
-
-	if (command->redir_path) {
-		fclose(out);
 	}
 }
 
@@ -377,6 +367,8 @@ void handle(char *line) {
 		command_init(&command, lines.list[i]);
 		if (command_parse(&command)) {
 			fprintf(stderr, GENERIC_ERROR_MESSAGE);
+		} else if (command_init_io(&command)) {
+			// Error already printed...
 		} else {
 			command_execute_builtin(&command, lines.len > 1);
 			if (command.builtin_status < 0) {
@@ -414,7 +406,7 @@ void shell(FILE *input, bool interactive) {
 				perror("Couln't read command line (getline)");
 			}
 			free(line);
-			return;
+			break;
 		}
 
 		handle(line);
@@ -439,9 +431,6 @@ void shell_script(char *file_path) {
 	fclose(script);
 }
 
-/* TODO: Error handlings, cleanup and resource closing etc...  Final check with valgrind
- * TODO: Sigint command_executer.  (So that the shell won't quit on C-c.)
- */
 int main(int argc, char *argv[]) {
 	if (argc == 1) {
 		shell_interactive();
