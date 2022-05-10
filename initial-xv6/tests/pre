@@ -1,8 +1,9 @@
-../tester/xv6-edit-makefile.sh src/Makefile test_1,test_2 > src/Makefile.test
-cp -f tests/test_1.c src/user/test_1.c
-cp -f tests/test_2.c src/user/test_2.c
-cd src
+xv6root='../xv6-riscv'
+../tester/xv6-edit-makefile.sh $xv6root/Makefile test_1,test_2 > $xv6root/Makefile.test
+cp -f tests/test_1.c $xv6root/user/test_1.c
+cp -f tests/test_2.c $xv6root/user/test_2.c
+pushd $xv6root > /dev/null
 make -f Makefile.test clean
 make -f Makefile.test xv6.img
 make -f Makefile.test fs.img
-cd ..
+popd > /dev/null
