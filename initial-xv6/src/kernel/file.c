@@ -18,11 +18,17 @@ struct {
   struct spinlock lock;
   struct file file[NFILE];
 } ftable;
+struct {
+  uint64 number;
+  struct spinlock lock;
+} readcount;
 
 void
 fileinit(void)
 {
   initlock(&ftable.lock, "ftable");
+  initlock(&readcount.lock, "readcount");
+  readcount.number = 0;
 }
 
 // Allocate a file structure.
@@ -180,3 +186,13 @@ filewrite(struct file *f, uint64 addr, int n)
   return ret;
 }
 
+
+uint64 readcountget(void) {
+  return readcount.number;
+}
+
+void readcountinc(void) {
+  acquire(&readcount.lock);
+  readcount.number += 1;
+  release(&readcount.lock);
+}
