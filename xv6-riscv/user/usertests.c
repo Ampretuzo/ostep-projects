@@ -1,6 +1,7 @@
 #include "kernel/param.h"
 #include "kernel/types.h"
 #include "kernel/stat.h"
+#include "kernel/pstat.h"
 #include "user/user.h"
 #include "kernel/fs.h"
 #include "kernel/fcntl.h"
@@ -2772,6 +2773,14 @@ countfree()
   return n;
 }
 
+// NOTE: Not a test, temporary dev convenience
+void pinfo(char *s) {
+  struct pstat ps;
+  int res = getpinfo(&ps);
+  printf("res: %d\n", res);
+  exit(0);
+}
+
 // run each test in its own process. run returns 1 if child's exit()
 // indicates success.
 int
@@ -2881,6 +2890,7 @@ main(int argc, char *argv[])
     {iref, "iref"},
     {forktest, "forktest"},
     {bigdir, "bigdir"}, // slow
+    {pinfo, "pinfo"},
     { 0, 0},
   };
 

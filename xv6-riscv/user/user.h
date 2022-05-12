@@ -1,4 +1,5 @@
 struct stat;
+struct pstat;
 struct rtcdate;
 
 // system calls
@@ -24,6 +25,7 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int getreadcount(void);
+int getpinfo(struct pstat*);
 
 // ulib.c
 int stat(const char*, struct stat*);
