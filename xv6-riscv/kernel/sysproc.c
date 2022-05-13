@@ -97,5 +97,8 @@ sys_uptime(void)
 }
 
 uint64 sys_getpinfo(void) {
-  return -1;
+  uint64 p;
+  if(argaddr(0, &p) < 0)
+    return -1;
+  return getpinfo(p);
 }

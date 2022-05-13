@@ -4,6 +4,7 @@
 #include "riscv.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "pstat.h"
 #include "defs.h"
 
 struct cpu cpus[NCPU];
@@ -653,4 +654,22 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int getpinfo(uint64 addr) {
+ struct proc *p = myproc();
+ struct pstat ps;
+
+ for (int i = 0; i < NPROC; i++) {
+   // TODO: Lock properly
+   ps.inuse[i] = !(proc[i].state == UNUSED);
+   ps.pid[i] = proc[i].pid;
+   ps.tickets[i] = -1; // TODO
+   ps.ticks[i] = -1; // TODO
+ }
+
+ if(copyout(p->pagetable, addr, (void *) &ps, sizeof(ps)) < 0) {
+   return -1;
+ }
+ return 0;
 }

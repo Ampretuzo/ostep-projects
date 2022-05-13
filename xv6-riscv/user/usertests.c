@@ -2776,8 +2776,12 @@ countfree()
 // NOTE: Not a test, temporary dev convenience
 void pinfo(char *s) {
   struct pstat ps;
-  int res = getpinfo(&ps);
-  printf("res: %d\n", res);
+  if (getpinfo(&ps) < 0) {
+    exit(1);
+  }
+  for (int i = 0; i < NPROC; i++) {
+    printf("%d %d\n", ps.inuse[i], ps.pid[i]);
+  }
   exit(0);
 }
 
