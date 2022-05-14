@@ -106,6 +106,7 @@ extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
 extern uint64 sys_getpinfo(void);
+extern uint64 sys_settickets(void);
 
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -131,6 +132,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_close]   sys_close,
 [SYS_getreadcount] sys_getreadcount,
 [SYS_getpinfo] sys_getpinfo,
+[SYS_settickets] sys_settickets,
 };
 
 void

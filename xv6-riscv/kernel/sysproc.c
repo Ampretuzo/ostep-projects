@@ -102,3 +102,10 @@ uint64 sys_getpinfo(void) {
     return -1;
   return getpinfo(p);
 }
+
+uint64 sys_settickets(void) {
+  int number;
+  if(argint(0, &number) < 0)
+    return -1;
+  return settickets(number);
+}

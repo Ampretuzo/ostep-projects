@@ -673,3 +673,11 @@ int getpinfo(uint64 addr) {
  }
  return 0;
 }
+
+int settickets(int number) {
+  if (number <= 0) {
+    return -1;
+  }
+  // TODO
+  return 0;
+}

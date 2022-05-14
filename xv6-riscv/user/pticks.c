@@ -12,7 +12,7 @@ void work() {
 int forkt(int ticks) {
   int rc = fork();
   if (rc == 0) {
-    // TODO: Call settickets
+    settickets(ticks);
     work();
     exit(0);
   } else {
@@ -42,6 +42,7 @@ main(int argc, char *argv[])
   printf("Timestamp in ticks, ticks for the process with 10 tickets, same for 20, and same for 30\n");
   uptime0 = uptime();
   while (1) {
+    // Q: How does this even work on CPUS=1 with wakeup() only moving from SLEEPING but not switching to scheduler?
     if (getpinfo(&ps) < 0) {
       printf("getpinfo returned nonzero\n");
       ec = 1;
