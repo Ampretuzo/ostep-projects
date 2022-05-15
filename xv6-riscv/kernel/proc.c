@@ -296,6 +296,9 @@ fork(void)
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
+  // Same number of tickets as the parent
+  np->tickets = p->tickets;
+
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
     if(p->ofile[i])
@@ -678,6 +681,7 @@ int settickets(int number) {
   if (number <= 0) {
     return -1;
   }
-  // TODO
+  struct proc *p = myproc();
+  p->tickets = number;
   return 0;
 }
