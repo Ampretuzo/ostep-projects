@@ -21,7 +21,12 @@ int forkt(int ticks) {
 }
 
 int gettickets(int pid, struct pstat *ps) {
-  return 0;
+  for (int i = 0; i < NPROC; i++) {
+    if (ps->inuse[i] && ps->pid[i] == pid) {
+      return ps->ticks[i];
+    }
+  }
+  return -1;
 }
 
 /*
@@ -39,10 +44,10 @@ main(int argc, char *argv[])
   int pid30 = forkt(30);
   printf("Forked pids: %d, %d, %d\n", pid10, pid20, pid30);
 
-  printf("Timestamp in ticks, ticks for the process with 10 tickets, same for 20, and same for 30\n");
+  printf("\n");
+  printf("tickstotal, ticks10, ticks20, ticks30\n");
   uptime0 = uptime();
   while (1) {
-    // Q: How does this even work on CPUS=1 with wakeup() only moving from SLEEPING but not switching to scheduler?
     if (getpinfo(&ps) < 0) {
       printf("getpinfo returned nonzero\n");
       ec = 1;

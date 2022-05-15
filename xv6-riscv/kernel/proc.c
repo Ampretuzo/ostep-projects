@@ -443,6 +443,7 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
+  uint ticks0;
   
   c->proc = 0;
   for(;;){
@@ -455,6 +456,7 @@ scheduler(void)
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
+        ticks0 = ticks;
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
@@ -462,6 +464,8 @@ scheduler(void)
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
+
+        p->ticks += ticks - ticks0;
       }
       release(&p->lock);
     }
@@ -664,11 +668,10 @@ int getpinfo(uint64 addr) {
  struct pstat ps;
 
  for (int i = 0; i < NPROC; i++) {
-   // TODO: Lock properly
    ps.inuse[i] = !(proc[i].state == UNUSED);
    ps.pid[i] = proc[i].pid;
-   ps.tickets[i] = -1; // TODO
-   ps.ticks[i] = -1; // TODO
+   ps.tickets[i] = proc[i].tickets;
+   ps.ticks[i] = proc[i].ticks;
  }
 
  if(copyout(p->pagetable, addr, (void *) &ps, sizeof(ps)) < 0) {
