@@ -461,7 +461,6 @@ scheduler(void)
       acquire(&p->lock);
       if (p->state == RUNNABLE) {
         ticketsacc[i] = ticketsacc[i] + p->tickets;
-        printf("Runnable found %s, ticketsacc %d\n", p->name, ticketsacc[i]);
       } else {
         release(&p->lock);
       }
@@ -472,15 +471,9 @@ scheduler(void)
     pr = 0;
     for (int i = 0; i < NPROC; i++) {
       p = &proc[i];
-      if ((ticketsacc[i] > (rand % ticketsacc[NPROC - 1])) && !pr) {
-    // printf("ticketsacc ");
-    // for (int j = 0; j < NPROC; j++) {
-    //   printf("%d ", ticketsacc[j]);
-    // }
-    // printf("\n");
+      if (ticketsacc[i] > rand % ticketsacc[NPROC - 1] && !pr) {
         pr = p;
-      } else if (ticketsacc[i] > (i == 0) ? 0 : ticketsacc[i - 1]) {
-        panic("release"); // Never called
+      } else if (ticketsacc[i] > (i == 0 ? 0 : ticketsacc[i - 1])) {
         release(&p->lock);
       }
     }
