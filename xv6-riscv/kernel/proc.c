@@ -1,5 +1,6 @@
 #include "types.h"
 #include "param.h"
+#include "random.h"
 #include "memlayout.h"
 #include "riscv.h"
 #include "spinlock.h"
@@ -244,6 +245,7 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
+  p->tickets = 1;
 
   release(&p->lock);
 }
@@ -442,7 +444,10 @@ void
 scheduler(void)
 {
   struct proc *p;
+  struct proc *pr;
   struct cpu *c = mycpu();
+  uint rand;
+  uint ticketsacc[NPROC];
   uint ticks0;
   
   c->proc = 0;
@@ -450,25 +455,53 @@ scheduler(void)
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
-    for(p = proc; p < &proc[NPROC]; p++) {
+    for (int i = 0; i < NPROC; i++) {
+      p = &proc[i];
+      ticketsacc[i] = i == 0 ? 0 : ticketsacc[i - 1];
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        ticks0 = ticks;
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-
-        p->ticks += ticks - ticks0;
+      if (p->state == RUNNABLE) {
+        ticketsacc[i] = ticketsacc[i] + p->tickets;
+        printf("Runnable found %s, ticketsacc %d\n", p->name, ticketsacc[i]);
+      } else {
+        release(&p->lock);
       }
-      release(&p->lock);
     }
+
+    rand = next_random();
+
+    pr = 0;
+    for (int i = 0; i < NPROC; i++) {
+      p = &proc[i];
+      if ((ticketsacc[i] > (rand % ticketsacc[NPROC - 1])) && !pr) {
+    // printf("ticketsacc ");
+    // for (int j = 0; j < NPROC; j++) {
+    //   printf("%d ", ticketsacc[j]);
+    // }
+    // printf("\n");
+        pr = p;
+      } else if (ticketsacc[i] > (i == 0) ? 0 : ticketsacc[i - 1]) {
+        panic("release"); // Never called
+        release(&p->lock);
+      }
+    }
+    if (!pr) {
+      continue;
+    }
+
+    // Switch to chosen process.  It is the process's job
+    // to release its lock and then reacquire it
+    // before jumping back to us.
+    ticks0 = ticks;
+    pr->state = RUNNING;
+    c->proc = pr;
+    swtch(&c->context, &pr->context);
+
+    // Process is done running for now.
+    // It should have changed its p->state before coming back.
+    c->proc = 0;
+
+    pr->ticks += ticks - ticks0;
+    release(&pr->lock);
   }
 }
 
