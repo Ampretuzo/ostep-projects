@@ -80,3 +80,20 @@ void kv_put(struct kv *kv, char *key, char *value) {
         data = data->next;
     }
 }
+
+char* kv_get(struct kv *kv, char *key) {
+    struct data *data = kv->data;
+
+    while (data) {
+        if (!strcmp(key, data->key)) {
+            break;
+        }
+        data = data->next;
+    }
+
+    if (data) {
+        return data->value;
+    } else {
+        return NULL;
+    }
+}

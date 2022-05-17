@@ -10,7 +10,6 @@ int main(int argc, char *argv[]) {
     char *key;
     char *value;
     struct kv kv;
-    int ec = 0;
 
     kv_init(&kv, NULL);
     for (int argidx = 1; argidx < argc; argidx ++) {
@@ -24,18 +23,21 @@ int main(int argc, char *argv[]) {
                 kv_put(&kv, key, value);
             }
         } else if (!strcmp(command, "g")) {
-            ec = 1;
+            key = strsep(&argv[argidx], ",");
+            value = kv_get(&kv, key);
+            if (value) {
+                printf("%s,%s\n", key, value);
+            } else {
+                printf("%s not found\n", key);
+            }
         } else if (!strcmp(command, "d")) {
-            ec = 1;
         } else if (!strcmp(command, "c")) {
-            ec = 1;
         } else if (!strcmp(command, "a")) {
-            ec = 1;
         } else {
-            ec = 1;
+            printf("bad command");
         }
     }
     kv_free(&kv);
 
-    return ec;
+    return 0;
 }
