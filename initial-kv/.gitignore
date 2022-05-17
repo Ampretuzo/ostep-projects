@@ -1,3 +1,4 @@
 /tests-out/
 kv
 *.o
+kvdata.text

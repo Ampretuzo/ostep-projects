@@ -9,6 +9,10 @@ int main(int argc, char *argv[]) {
     char *command;
     char *key;
     char *value;
+    struct kv kv;
+    int ec = 0;
+
+    kv_init(&kv, NULL);
     for (int argidx = 1; argidx < argc; argidx ++) {
         command = strsep(&argv[argidx], ",");
         if (!strcmp(command, "p")) {
@@ -17,18 +21,21 @@ int main(int argc, char *argv[]) {
             if (!key || !value) {
                 printf("bad command");
             } else {
-                kv_put(key, value);
+                kv_put(&kv, key, value);
             }
         } else if (!strcmp(command, "g")) {
-            exit(1);
+            ec = 1;
         } else if (!strcmp(command, "d")) {
-            exit(1);
+            ec = 1;
         } else if (!strcmp(command, "c")) {
-            exit(1);
+            ec = 1;
         } else if (!strcmp(command, "a")) {
-            exit(1);
+            ec = 1;
         } else {
-            exit(1);
+            ec = 1;
         }
     }
+    kv_free(&kv);
+
+    return ec;
 }
