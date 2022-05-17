@@ -10,6 +10,8 @@ struct data {
     struct data *next;
 };
 
+typedef void entryprocessor(struct data *data, struct data **prev);
+
 // No error checks no bs
 
 void kv_init(struct kv *kv, char *dbpath) {
@@ -50,11 +52,20 @@ void kv_free(struct kv *kv) {
     }
 }
 
+void persistall(struct kv *kv) {
+    struct data *data = kv->data;
+    FILE *fp = fopen(kv->dbpath, "w");
+    while (data) {
+        fprintf(fp, "%s,%s\n", data->key, data->value);
+        data = data->next;
+    }
+    fclose(fp);
+}
+
 // Callers make sure key and value does not contain
 // any commas or newlines.
 void kv_put(struct kv *kv, char *key, char *value) {
     struct data *data = kv->data;
-    FILE *fp;
 
     while (data) {
         if (!strcmp(key, data->key)) {
@@ -64,6 +75,7 @@ void kv_put(struct kv *kv, char *key, char *value) {
     }
 
     if (data) {
+        free(data->value);
         data->value = value;
     } else {
         struct data *new = malloc(sizeof(struct data));
@@ -73,12 +85,7 @@ void kv_put(struct kv *kv, char *key, char *value) {
         new->value = strdup(value);
     }
 
-    data = kv->data;
-    fp = fopen(kv->dbpath, "w");
-    while (data) {
-        fprintf(fp, "%s,%s\n", data->key, data->value);
-        data = data->next;
-    }
+    persistall(kv);
 }
 
 char* kv_get(struct kv *kv, char *key) {
@@ -96,4 +103,56 @@ char* kv_get(struct kv *kv, char *key) {
     } else {
         return NULL;
     }
+}
+
+struct data* callwhenfound(struct data **data0, char *key, entryprocessor* fn) {
+    struct data *data = *data0;
+    struct data **dataprev = data0;
+
+    while (data) {
+        if (!strcmp(key, data->key)) {
+            break;
+        }
+        dataprev = &data->next;
+        data = data->next;
+    }
+
+    if (data) {
+        fn(data, dataprev);
+    }
+
+    return data;
+}
+
+void callforeach(struct data *d, callable *fn) {
+    while (d) {
+        fn(d->key, d->value);
+        d = d->next;
+    }
+}
+
+void deletentry(struct data *d, struct data **prev) {
+    *prev = d->next;
+    free(d->key);
+    free(d->value);
+    free(d);
+}
+
+int kv_delete(struct kv* kv, char *key) {
+    struct data *data = callwhenfound(&kv->data, key, &deletentry);
+    if (!data) {
+        return -1;
+    }
+    persistall(kv);
+    return 0;
+}
+
+void kv_callforeach(struct kv* kv, callable *fn) {
+    callforeach(kv->data, fn);
+}
+
+void kv_clear(struct kv *kv) {
+    kv_free(kv);
+    kv->data = NULL;
+    persistall(kv);
 }

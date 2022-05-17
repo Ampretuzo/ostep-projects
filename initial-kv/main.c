@@ -4,6 +4,10 @@
 
 #include "kv.h"
 
+void printkv(char *key, char *value) {
+    printf("%s,%s\n", key, value);
+}
+
 // Keys might have no commas, otherwise all good.
 int main(int argc, char *argv[]) {
     char *command;
@@ -31,8 +35,14 @@ int main(int argc, char *argv[]) {
                 printf("%s not found\n", key);
             }
         } else if (!strcmp(command, "d")) {
+            key = strsep(&argv[argidx], ",");
+            if (kv_delete(&kv, key)) {
+                printf("%s not found\n", key);
+            }
         } else if (!strcmp(command, "c")) {
+            kv_clear(&kv);
         } else if (!strcmp(command, "a")) {
+            kv_callforeach(&kv, &printkv);
         } else {
             printf("bad command");
         }
