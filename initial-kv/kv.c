@@ -29,6 +29,7 @@ void kv_init(struct kv *kv, char *dbpath) {
         new->value = strdup(line);
         new->value[strlen(new->value) - 1] = 0;
         new->key = strsep(&new->value, ",");
+        new->value = strdup(new->value);
         memmove(next, &new, sizeof(struct data *));
         next = &new->next;
     }
@@ -49,12 +50,33 @@ void kv_free(struct kv *kv) {
     }
 }
 
+// Callers make sure key and value does not contain
+// any commas or newlines.
 void kv_put(struct kv *kv, char *key, char *value) {
     struct data *data = kv->data;
-    printf("Someone wants to write '%s' for key '%s'\n", value, key);
-    printf("Printing existing entries:\n");
-    while(data) {
-        printf("Key: '%s', Value: '%s'\n", data->key, data->value);
+    FILE *fp;
+
+    while (data) {
+        if (!strcmp(key, data->key)) {
+            break;
+        }
+        data = data->next;
+    }
+
+    if (data) {
+        data->value = value;
+    } else {
+        struct data *new = malloc(sizeof(struct data));
+        new->next = kv->data;
+        kv->data = new;
+        new->key = strdup(key);
+        new->value = strdup(value);
+    }
+
+    data = kv->data;
+    fp = fopen(kv->dbpath, "w");
+    while (data) {
+        fprintf(fp, "%s,%s\n", data->key, data->value);
         data = data->next;
     }
 }
