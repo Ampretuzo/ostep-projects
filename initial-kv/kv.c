@@ -32,7 +32,7 @@ void kv_init(struct kv *kv, char *dbpath) {
         new->value[strlen(new->value) - 1] = 0;
         new->key = strsep(&new->value, ",");
         new->value = strdup(new->value);
-        memmove(next, &new, sizeof(struct data *));
+        *next = new;
         next = &new->next;
     }
     free(line);
